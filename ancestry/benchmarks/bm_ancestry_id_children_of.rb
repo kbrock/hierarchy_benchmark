@@ -11,6 +11,6 @@ ActiveRecord::Migration.verbose = false
 class User < ActiveRecord::Base ; has_ancestry ; end
 
 obj = User.roots.first.children.first
-Benchmark.ancestry("children_of", time: 5) do
+Benchmark.ancestry("children_of_id", time: 5) do
   User.children_of(obj.id).to_a
 end
