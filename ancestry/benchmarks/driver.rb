@@ -1,5 +1,5 @@
 #
-# Rails Benchmark driver
+# Ancestry Benchmark driver
 #
 require 'bundler/setup'
 require 'net/http'
@@ -27,14 +27,15 @@ class BenchmarkDriver
     @repeat_count = options[:repeat_count]
     @pattern = options[:pattern]
     @debug = options[:debug] || false
+    @verbose = options[:verbose] || false
   end
 
   def run
+    print "#{files.count}: " if @verbose
     files.each do |path|
-      next if !@pattern.empty? && /#{@pattern.join('|')}/ !~ File.basename(path)
-
       run_single(path, database: 'psql', debug: @debug)
     end
+    puts if @verbose
   end
 
   private
@@ -51,16 +52,17 @@ class BenchmarkDriver
       'benchmark_type[script_url]' => "#{RAW_URL}#{Pathname.new(path).basename}",
       'benchmark_type[digest]'     => generate_digest(path, database),
       'benchmark_run[environment]' => "#{`ruby -v`}",
-      'version'                    => output["version"],
       'repo'                       => 'ancestry',
       'organization'               => 'ancestry',
     }
 
-    # if(ENV['RAILS_COMMIT_HASH'])
-    #   data['commit_hash'] = ENV['RAILS_COMMIT_HASH']
-    # elsif(ENV['RAILS_VERSION'])
-    #   data['version'] = ENV['RAILS_VERSION']
-    # end
+    if(ENV['COMMIT_HASH'])
+      data['commit_hash'] = ENV['COMMIT_HASH']
+    elsif(ENV['VERSION'])
+      data['version'] = ENV['VERSION']
+    elsif(output["version"])
+      data['version'] = output["version"]
+    end
 
     data
   end
@@ -78,7 +80,9 @@ class BenchmarkDriver
   end
 
   def files
-    Dir["#{File.expand_path(File.dirname(__FILE__))}/bm_*"]
+    Dir["#{File.expand_path(File.dirname(__FILE__))}/bm_*"].select do |path|
+      @pattern.empty? || /#{@pattern.join('|')}/ =~ File.basename(path)
+    end
   end
 
   def run_single(path, connection: nil, database: nil, debug: false)
@@ -92,7 +96,7 @@ class BenchmarkDriver
     end
 
     if debug
-      puts output
+      puts JSON.pretty_generate(output)
       return
     end
 
@@ -123,7 +127,7 @@ class BenchmarkDriver
       'benchmark_result_type[unit]' => 'Objects'
     }) or return
 
-    puts "Posting results to Web UI...."
+    print "." if @verbose
   end
 
   def endpoint
@@ -153,7 +157,6 @@ class BenchmarkDriver
 
       @repeat_count.times do
         result = JSON.parse(`#{script}`)
-        puts "#{result["label"]} #{result["iterations_per_second"]}/ips"
         results << result
       end
 
@@ -161,6 +164,7 @@ class BenchmarkDriver
         result['iterations_per_second']
       end.last
     rescue JSON::ParserError
+      puts "error" if @debug || @verbose
       # Do nothing
     end
   end
@@ -173,6 +177,10 @@ options = {
 
 OptionParser.new do |opts|
   opts.banner = "Usage: ruby driver.rb [options]"
+
+  opts.on("-v", "--verbose", "Give progress status") do
+    options[:verbose] = true
+  end
 
   opts.on("-d", "--debug", "Run benchmark printing results to stdout") do
     options[:debug] = true
